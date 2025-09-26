@@ -1,0 +1,8 @@
+streamlit
+pandas
+matplotlib
+openai
+python-dotenv
+plotly 
+supabase
+streamlit-authenticator
