@@ -25,7 +25,7 @@ openai_client = OpenAI(api_key=QWEN_API_KEY,
                        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
 # 配置
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
-SUPABASE_KEY = ost.secrets["SUPABASE_KEY"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 
 # 初始化客户端
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
