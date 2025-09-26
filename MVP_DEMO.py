@@ -335,7 +335,7 @@ def get_daily_updates():
         updates = {}
 
         # 获取金融新闻
-        finance_prompt = "请提供今日3条最重要的全球金融市场动态，每条不超过50字。"
+        finance_prompt = "今天是{}，请提供今日3条最重要的全球金融市场动态，每条不超过50字。".format(today)
         finance_response = openai_client.chat.completions.create(
             model="qwen-plus-2025-09-11",
             messages=[{"role": "user", "content": finance_prompt}],
