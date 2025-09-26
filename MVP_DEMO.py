@@ -14,17 +14,18 @@ import numpy as np
 import hashlib
 import yaml
 from yaml.loader import SafeLoader
-from dotenv import load_dotenv
+# from dotenv import load_dotenv
 import os
 from openai import OpenAI
 
-load_dotenv()
+# load_dotenv()
 # Initialize OpenAI client
-openai_client = OpenAI(api_key=os.getenv("QWEN_API_KEY"),
+QWEN_API_KEY = st.secrets["QWEN_API_KEY"]
+openai_client = OpenAI(api_key=QWEN_API_KEY,
                        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
 # 配置
-SUPABASE_URL = os.getenv("SUPABASE_URL") or ""
-SUPABASE_KEY = os.getenv("SUPABASE_KEY") or ""
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = ost.secrets["SUPABASE_KEY"]
 
 # 初始化客户端
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
