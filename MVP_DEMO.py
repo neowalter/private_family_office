@@ -462,13 +462,15 @@ def get_daily_updates():
             }
 
         updates = {}
-
+        
         # 获取金融新闻
-        finance_prompt = "请提供今日3条最重要的全球金融市场动态，每条不超过50字。"
+        finance_system_prompt = "你是一个资深的财经，政治，金融新闻获情报分析专家，擅长梳理选择对金融市场影响较大的宏观重磅新闻事件，例如美联储加息，地缘政治冲突等。"
+        finance_prompt = "今天是{today}，请调用搜索工具搜索今天的3个宏观的政治，金融新闻，请使用搜索进行获取，不要进行编造，每条不超过50字。".format(today=today)
         finance_response = openai_client.chat.completions.create(
             model="qwen-plus-2025-09-11",
-            messages=[{"role": "user", "content": finance_prompt}],
-            max_tokens=200
+            messages=[{"role": "system", "content": finance_system_prompt},
+                {"role": "user", "content": finance_prompt}],
+            max_tokens=400
         )
         if getattr(finance_response, 'choices', None):
             c = finance_response.choices[0]
@@ -496,11 +498,11 @@ def get_daily_updates():
             updates['health'] = str(health_response)
 
         # 获取教育资讯
-        edu_prompt = "请提供一条关于K12教育或高等教育的最新资讯或建议，不超过100字。"
+        edu_prompt = "今天是{today}，请提供一条关于教育相关的最新资讯或建议，不超过100字。".format(today=today)
         edu_response = openai_client.chat.completions.create(
             model="qwen-plus-2025-09-11",
             messages=[{"role": "user", "content": edu_prompt}],
-            max_tokens=150
+            max_tokens=250
         )
         if getattr(edu_response, 'choices', None):
             c = edu_response.choices[0]
@@ -702,6 +704,133 @@ def start_scheduler_in_background():
     thread.start()
     st.session_state['_scheduler_started'] = True
 
+
+def init_session_from_db(user_id: str):
+    """Populate st.session_state with values from DB so returning users see saved inputs.
+
+    This sets session keys only if they are not already present to avoid overwriting in-progress edits.
+    """
+    if not user_id:
+        return
+
+    guard = f"_session_init_{user_id}"
+    if st.session_state.get(guard):
+        return
+
+    user_data = load_user_data(user_id)
+    if not user_data:
+        st.session_state[guard] = True
+        return
+
+    # Investment sliders and risk
+    try:
+        stock_key = f"stock_pct_{user_id}"
+        bond_key = f"bond_pct_{user_id}"
+        property_key = f"property_pct_{user_id}"
+        cash_key = f"cash_pct_{user_id}"
+        risk_key = f"risk_level_{user_id}"
+
+        if stock_key not in st.session_state:
+            st.session_state[stock_key] = int(user_data.get('stock_percentage', 30) or 30)
+        if bond_key not in st.session_state:
+            st.session_state[bond_key] = int(user_data.get('bond_percentage', 20) or 20)
+        if property_key not in st.session_state:
+            st.session_state[property_key] = int(user_data.get('property_percentage', 35) or 35)
+        if cash_key not in st.session_state:
+            st.session_state[cash_key] = int(user_data.get('cash_percentage', 15) or 15)
+        if risk_key not in st.session_state:
+            st.session_state[risk_key] = user_data.get('risk_level', '平衡')
+    except Exception:
+        pass
+
+    # Child inputs (education page): set widgets keys used (age_{i}, grade_{i}, interests_{i}, goals_{i})
+    try:
+        num_children = int(user_data.get('num_children', 0) or 0)
+        for i in range(num_children):
+            age_k = f"age_{i}"
+            grade_k = f"grade_{i}"
+            interests_k = f"interests_{i}"
+            goals_k = f"goals_{i}"
+            if age_k not in st.session_state:
+                st.session_state[age_k] = int(user_data.get(f'child_{i}_age', 10) or 10)
+            if grade_k not in st.session_state:
+                st.session_state[grade_k] = user_data.get(f'child_{i}_grade', '小学')
+            if interests_k not in st.session_state:
+                st.session_state[interests_k] = user_data.get(f'child_{i}_interests', '')
+            if goals_k not in st.session_state:
+                st.session_state[goals_k] = user_data.get(f'child_{i}_goals', '')
+    except Exception:
+        pass
+
+    # Weekly/monthly tasks used in life planning
+    try:
+        if 'weekly_tasks' not in st.session_state and user_data.get('weekly_tasks'):
+            st.session_state['weekly_tasks'] = user_data.get('weekly_tasks')
+        if 'monthly_goals' not in st.session_state and user_data.get('monthly_goals'):
+            st.session_state['monthly_goals'] = user_data.get('monthly_goals')
+    except Exception:
+        pass
+
+    # Some profile/health quick values
+    try:
+        if 'sleep_hours' not in st.session_state and user_data.get('sleep_hours') is not None:
+            st.session_state['sleep_hours'] = int(user_data.get('sleep_hours') or 0)
+        if 'smoke' not in st.session_state and user_data.get('smoke') is not None:
+            st.session_state['smoke'] = bool(user_data.get('smoke'))
+    except Exception:
+        pass
+
+    # Hydrate additional health fields
+    try:
+        if 'age' not in st.session_state and user_data.get('age') is not None:
+            st.session_state['age'] = int(user_data.get('age') or 0)
+        if 'height' not in st.session_state and user_data.get('height') is not None:
+            st.session_state['height'] = float(user_data.get('height') or 0)
+        if 'weight' not in st.session_state and user_data.get('weight') is not None:
+            st.session_state['weight'] = float(user_data.get('weight') or 0)
+        if 'exercise_freq' not in st.session_state and user_data.get('exercise_freq') is not None:
+            st.session_state['exercise_freq'] = user_data.get('exercise_freq')
+        if 'drink' not in st.session_state and user_data.get('drink') is not None:
+            st.session_state['drink'] = user_data.get('drink')
+    except Exception:
+        pass
+
+    # Hydrate life planning/profile quick fields
+    try:
+        if 'life_stage' not in st.session_state and user_data.get('life_stage'):
+            st.session_state['life_stage'] = user_data.get('life_stage')
+        if 'short_term_goals' not in st.session_state and user_data.get('short_term_goals') is not None:
+            st.session_state['short_term_goals'] = user_data.get('short_term_goals')
+        if 'medium_term_goals' not in st.session_state and user_data.get('medium_term_goals') is not None:
+            st.session_state['medium_term_goals'] = user_data.get('medium_term_goals')
+        if 'long_term_goals' not in st.session_state and user_data.get('long_term_goals') is not None:
+            st.session_state['long_term_goals'] = user_data.get('long_term_goals')
+        if 'life_vision' not in st.session_state and user_data.get('life_vision') is not None:
+            st.session_state['life_vision'] = user_data.get('life_vision')
+        if 'priorities' not in st.session_state and user_data.get('priorities') is not None:
+            st.session_state['priorities'] = user_data.get('priorities')
+        if 'weekly_tasks' not in st.session_state and user_data.get('weekly_tasks') is not None:
+            st.session_state['weekly_tasks'] = user_data.get('weekly_tasks')
+        if 'monthly_goals' not in st.session_state and user_data.get('monthly_goals') is not None:
+            st.session_state['monthly_goals'] = user_data.get('monthly_goals')
+    except Exception:
+        pass
+
+    # Hydrate profile fields
+    try:
+        if 'name' not in st.session_state and user_data.get('name') is not None:
+            st.session_state['name'] = user_data.get('name')
+        if 'phone' not in st.session_state and user_data.get('phone') is not None:
+            st.session_state['phone'] = user_data.get('phone')
+        if 'gender' not in st.session_state and user_data.get('gender') is not None:
+            st.session_state['gender'] = user_data.get('gender')
+        if 'marital_status' not in st.session_state and user_data.get('marital_status') is not None:
+            st.session_state['marital_status'] = user_data.get('marital_status')
+    except Exception:
+        pass
+
+    st.session_state[guard] = True
+
 # 页面功能
 def dashboard_page():
     """主页面"""
@@ -712,19 +841,19 @@ def dashboard_page():
     
     # 概览指标
     col1, col2, col3, col4 = st.columns(4)
-    
+
     with col1:
         total_assets = user_data.get('total_assets', 0)
         st.metric("总资产", f"¥{total_assets:,.0f}", "↑ 5.2%")
-    
+
     with col2:
         health_score = user_data.get('health_score', 85)
         st.metric("健康评分", f"{health_score}/100", "↑ 2")
-    
+
     with col3:
         edu_progress = user_data.get('education_progress', 75)
         st.metric("教育进度", f"{edu_progress}%", "→")
-    
+
     with col4:
         life_score = user_data.get('life_score', 88)
         st.metric("人生规划评分", f"{life_score}/100", "↑ 3")
@@ -958,28 +1087,34 @@ def health_page():
             col_a, col_b = st.columns(2)
             
             with col_a:
-                age = st.number_input("年龄", value=user_data.get('age', 35), min_value=1, max_value=120)
-                height = st.number_input("身高(cm)", value=user_data.get('height', 170), min_value=100, max_value=250)
-                weight = st.number_input("体重(kg)", value=user_data.get('weight', 70), min_value=30, max_value=200)
+                age_default = int(st.session_state.get('age', user_data.get('age', 35)))
+                height_default = float(st.session_state.get('height', user_data.get('height', 170) or 170) or 170)
+                weight_default = float(st.session_state.get('weight', user_data.get('weight', 70) or 70) or 70)
+                age = st.number_input("年龄", value=age_default, min_value=1, max_value=120)
+                height = st.number_input("身高(cm)", value=height_default, min_value=100.0, max_value=250.0)
+                weight = st.number_input("体重(kg)", value=weight_default, min_value=30.0, max_value=200.0)
                 blood_pressure = st.text_input("血压", value=user_data.get('blood_pressure', '120/80'))
             
             with col_b:
                 exercise_options = ['从不', '偶尔(每月1-2次)', '每周1-2次', '每周3-4次', '每天']
-                val_ex = user_data.get('exercise_freq')
+                val_ex = st.session_state.get('exercise_freq', user_data.get('exercise_freq'))
                 exercise_default = val_ex if isinstance(val_ex, str) and val_ex in exercise_options else '每周3-4次'
+                ex_index = exercise_options.index(exercise_default) if exercise_default in exercise_options else 0
                 exercise_freq = st.selectbox(
                     "运动频率",
                     exercise_options,
-                    index=exercise_options.index(exercise_default)
+                    index=ex_index
                 )
-                sleep_hours = st.slider("平均睡眠时长(小时)", 4, 12, user_data.get('sleep_hours', 7))
-                smoke = st.selectbox("吸烟", ['否', '是'], index=0 if not user_data.get('smoke', False) else 1)
+                sleep_hours = st.slider("平均睡眠时长(小时)", 4, 12, int(st.session_state.get('sleep_hours', user_data.get('sleep_hours', 7))))
+                smoke_val = st.session_state.get('smoke', user_data.get('smoke', False))
+                smoke = st.selectbox("吸烟", ['否', '是'], index=0 if not smoke_val else 1)
                 drink_options = ['不饮酒', '偶尔', '经常']
-                val_dr = user_data.get('drink')
+                val_dr = st.session_state.get('drink', user_data.get('drink'))
                 drink_default = val_dr if isinstance(val_dr, str) and val_dr in drink_options else '偶尔'
-                drink = st.selectbox("饮酒", drink_options, index=drink_options.index(drink_default))
+                drink_index = drink_options.index(drink_default) if drink_default in drink_options else 0
+                drink = st.selectbox("饮酒", drink_options, index=drink_index)
             
-            health_goals = st.text_area("健康目标", value=user_data.get('health_goals', ''), 
+                health_goals = st.text_area("健康目标", value=st.session_state.get('health_goals', user_data.get('health_goals', '')), 
                                        placeholder="例如：减重10kg，改善睡眠质量等")
             
             if st.form_submit_button("保存健康数据"):
@@ -1097,7 +1232,14 @@ def education_page():
         with st.form("education_form"):
             # defensively handle None values stored in user_data
             num_children_default = int(user_data.get('num_children') or 0)
-            num_children = st.number_input("子女数量", value=num_children_default, min_value=0, max_value=10)
+            # prefer session_state (hydrated from DB) so returning users see saved value
+            num_children = st.number_input(
+                "子女数量",
+                value=int(st.session_state.get('num_children', num_children_default)),
+                min_value=0,
+                max_value=10,
+                key='num_children'
+            )
             
             if num_children > 0:
                 children_info = []
@@ -1105,15 +1247,19 @@ def education_page():
                     st.markdown(f"**孩子 {i+1}**")
                     col_a, col_b = st.columns(2)
                     with col_a:
-                        default_age = int(user_data.get(f'child_{i}_age') or 10)
+                        default_age = int(st.session_state.get(f'age_{i}', int(user_data.get(f'child_{i}_age') or 10)))
                         child_age = st.number_input(f"年龄", key=f"age_{i}", value=default_age, min_value=0, max_value=30)
                         grade_options = ['幼儿园', '小学', '初中', '高中', '大学', '其他']
                         val_gr = user_data.get(f'child_{i}_grade')
-                        default_grade = val_gr if isinstance(val_gr, str) and val_gr in grade_options else '小学'
-                        child_grade = st.selectbox(f"年级", key=f"grade_{i}", options=grade_options, index=grade_options.index(default_grade))
+                        default_grade = st.session_state.get(f'grade_{i}', val_gr if isinstance(val_gr, str) and val_gr in grade_options else '小学')
+                        # ensure default_grade is valid
+                        if default_grade not in grade_options:
+                            default_grade = '小学'
+                        grade_index = grade_options.index(default_grade) if default_grade in grade_options else 0
+                        child_grade = st.selectbox(f"年级", key=f"grade_{i}", options=grade_options, index=grade_index)
                     with col_b:
-                        child_interests = st.text_input(f"兴趣特长", key=f"interests_{i}", value=user_data.get(f'child_{i}_interests') or '')
-                        child_goals = st.text_input(f"教育目标", key=f"goals_{i}", value=user_data.get(f'child_{i}_goals') or '')
+                        child_interests = st.text_input(f"兴趣特长", key=f"interests_{i}", value=st.session_state.get(f'interests_{i}', user_data.get(f'child_{i}_interests') or ''))
+                        child_goals = st.text_input(f"教育目标", key=f"goals_{i}", value=st.session_state.get(f'goals_{i}', user_data.get(f'child_{i}_goals') or ''))
                     
                     children_info.append({
                         'age': child_age,
@@ -1122,9 +1268,10 @@ def education_page():
                         'goals': child_goals
                     })
                 
+                education_budget_default = float(user_data.get('education_budget') or 10.0)
                 education_budget = st.number_input("年教育预算（万元）", 
-                                                  value=user_data.get('education_budget', 10), 
-                                                  min_value=0)
+                                                  value=education_budget_default, 
+                                                  min_value=0.0)
                 
                 education_plan = st.text_area("教育规划", 
                                              value=user_data.get('education_plan', ''),
@@ -1239,34 +1386,36 @@ def life_planning_page():
             stored_stage = user_data.get('life_stage')
             if not isinstance(stored_stage, str) or stored_stage not in stages:
                 stored_stage = '事业发展期'
+            stage_default = st.session_state.get('life_stage', stored_stage)
+            stage_index = stages.index(stage_default) if stage_default in stages else 0
             life_stage = st.selectbox(
                 "当前人生阶段",
                 stages,
-                index=stages.index(stored_stage)
+                index=stage_index
             )
             
             short_term_goals = st.text_area(
                 "短期目标（1-2年）",
-                value=user_data.get('short_term_goals', ''),
+                value=st.session_state.get('short_term_goals', user_data.get('short_term_goals', '')),
                 placeholder="例如：升职加薪、买房买车、健身减重等"
             )
             
             medium_term_goals = st.text_area(
                 "中期目标（3-5年）",
-                value=user_data.get('medium_term_goals', ''),
+                value=st.session_state.get('medium_term_goals', user_data.get('medium_term_goals', '')),
                 placeholder="例如：创业、子女教育、资产增值等"
             )
         
         with col2:
             long_term_goals = st.text_area(
                 "长期目标（5年以上）",
-                value=user_data.get('long_term_goals', ''),
+                value=st.session_state.get('long_term_goals', user_data.get('long_term_goals', '')),
                 placeholder="例如：财务自由、环游世界、退休规划等"
             )
             
             life_vision = st.text_area(
                 "人生愿景",
-                value=user_data.get('life_vision', ''),
+                value=st.session_state.get('life_vision', user_data.get('life_vision', '')),
                 placeholder="描述您理想中的人生状态..."
             )
             
@@ -1283,7 +1432,7 @@ def life_planning_page():
             priorities = st.multiselect(
                 "优先级排序",
                 priorities_options,
-                default=stored_priorities
+                default=st.session_state.get('priorities', stored_priorities)
             )
         
         if st.form_submit_button("保存规划"):
@@ -1412,15 +1561,17 @@ def life_planning_page():
     
     with col1:
         st.write("**本周待办**")
-        weekly_tasks = st.text_area("", placeholder="输入本周待办事项...", key="weekly_tasks")
+        weekly_tasks = st.text_area("", value=st.session_state.get('weekly_tasks', ''), placeholder="输入本周待办事项...", key="weekly_tasks")
         if st.button("保存周计划"):
-            st.success("周计划已保存")
+            if save_user_data(st.session_state.get('user_id', ''), {'weekly_tasks': weekly_tasks}):
+                st.success("周计划已保存")
     
     with col2:
         st.write("**本月目标**")
-        monthly_goals = st.text_area("", placeholder="输入本月目标...", key="monthly_goals")
+        monthly_goals = st.text_area("", value=st.session_state.get('monthly_goals', ''), placeholder="输入本月目标...", key="monthly_goals")
         if st.button("保存月目标"):
-            st.success("月目标已保存")
+            if save_user_data(st.session_state.get('user_id', ''), {'monthly_goals': monthly_goals}):
+                st.success("月目标已保存")
 
 def profile_page():
     """个人信息页面"""
@@ -1434,25 +1585,43 @@ def profile_page():
         col1, col2 = st.columns(2)
         
         with col1:
-            name = st.text_input("姓名", value=user_data.get('name', ''))
-            email = st.text_input("邮箱", value=user_data.get('email', ''))
-            phone = st.text_input("手机", value=user_data.get('phone', ''))
-            birth_date = st.date_input("出生日期", value=datetime.now().date())
+            name = st.text_input("姓名", value=st.session_state.get('name', user_data.get('name', '')))
+            email = st.text_input("邮箱", value=st.session_state.get('email', user_data.get('email', '')))
+            phone = st.text_input("手机", value=st.session_state.get('phone', user_data.get('phone', '')))
+            # robustly handle birth_date stored as str (ISO), date, datetime or missing
+            raw_birth = st.session_state.get('birth_date', user_data.get('birth_date'))
+            if raw_birth is None:
+                birth_default = datetime.now().date()
+            elif isinstance(raw_birth, str):
+                try:
+                    birth_default = datetime.fromisoformat(raw_birth).date()
+                except Exception:
+                    birth_default = datetime.now().date()
+            elif isinstance(raw_birth, datetime):
+                birth_default = raw_birth.date()
+            elif isinstance(raw_birth, date):
+                birth_default = raw_birth
+            else:
+                # fallback
+                birth_default = datetime.now().date()
+
+            birth_date = st.date_input("出生日期", value=birth_default)
         
         with col2:
             gender_options = ['男', '女', '其他']
-            stored_gender = user_data.get('gender')
+            stored_gender = st.session_state.get('gender', user_data.get('gender'))
             if not isinstance(stored_gender, str) or stored_gender not in gender_options:
                 stored_gender = '男'
-            gender = st.selectbox("性别", gender_options, index=gender_options.index(stored_gender))
-            occupation = st.text_input("职业", value=user_data.get('occupation', ''))
-            city = st.text_input("所在城市", value=user_data.get('city', ''))
+            gender_index = gender_options.index(stored_gender) if stored_gender in gender_options else 0
+            gender = st.selectbox("性别", gender_options, index=gender_index)
+            occupation = st.text_input("职业", value=st.session_state.get('occupation', user_data.get('occupation', '')))
+            city = st.text_input("所在城市", value=st.session_state.get('city', user_data.get('city', '')))
             marital_options = ['未婚', '已婚', '离异', '丧偶']
-            stored_marital = user_data.get('marital_status')
+            stored_marital = st.session_state.get('marital_status', user_data.get('marital_status'))
             if not isinstance(stored_marital, str) or stored_marital not in marital_options:
                 stored_marital = '已婚'
-            marital_status = st.selectbox("婚姻状况", marital_options,
-                                         index=marital_options.index(stored_marital))
+            marital_index = marital_options.index(stored_marital) if stored_marital in marital_options else 0
+            marital_status = st.selectbox("婚姻状况", marital_options, index=marital_index)
         
         if st.form_submit_button("更新基本信息"):
             data = {
@@ -1630,6 +1799,13 @@ except Exception:
 # If not logged in, stop here
 if not st.session_state.get('authentication_status'):
     st.stop()
+
+# Hydrate session_state for returning users so widgets reflect saved values
+try:
+    init_session_from_db(st.session_state.get('user_id', ''))
+except Exception:
+    # non-fatal: continue without hydration
+    pass
 
 # Top-center navigation (replaces sidebar radio)
 pages = {
