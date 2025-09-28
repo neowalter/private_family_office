@@ -30,6 +30,115 @@ SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 # 初始化客户端
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# Known user_data columns supported by the application (used to filter writes)
+SUPPORTED_USER_DATA_COLUMNS = {
+    'total_assets','stock_percentage','bond_percentage','property_percentage','cash_percentage','risk_level',
+    'health_score','health_status','age','height','weight','blood_pressure','exercise_freq','sleep_hours',
+    'smoke','drink','health_goals','bmi','num_children','children','education_budget','education_plan',
+    'education_progress','education_goals','life_stage','short_term_goals','medium_term_goals','long_term_goals',
+    'life_vision','priorities','wealth_score','family_score','career_score','growth_score','life_score',
+    'name','email_contact','phone','birth_date','gender','occupation','city','marital_status',
+    'daily_news','investment_alert','health_reminder','education_update','allow_ai_analysis','ux_opt_in',
+    'ai_life_suggestion','last_ai_life_date','ai_investment_suggestion','last_ai_investment_date',
+    'ai_health_suggestion','last_ai_health_date','ai_education_suggestion','last_ai_education_date',
+    'weekly_tasks','monthly_goals',
+    # child_* fields up to 9
+    'child_0_age','child_0_grade','child_0_interests','child_0_goals',
+    'child_1_age','child_1_grade','child_1_interests','child_1_goals',
+    'child_2_age','child_2_grade','child_2_interests','child_2_goals',
+    'child_3_age','child_3_grade','child_3_interests','child_3_goals',
+    'child_4_age','child_4_grade','child_4_interests','child_4_goals',
+    'child_5_age','child_5_grade','child_5_interests','child_5_goals',
+    'child_6_age','child_6_grade','child_6_interests','child_6_goals',
+    'child_7_age','child_7_grade','child_7_interests','child_7_goals',
+    'child_8_age','child_8_grade','child_8_interests','child_8_goals',
+    'child_9_age','child_9_grade','child_9_interests','child_9_goals'
+}
+
+# Field name mapping (application-level name -> database column name)
+# If your DB uses different names (e.g. 'height_cm'), set APP_TO_DB['height']='height_cm'
+APP_TO_DB: Dict[str, str] = {
+    # default passthrough; keep keys aligned with DB created by migrations above
+    'total_assets':'total_assets',
+    'stock_percentage':'stock_percentage',
+    'bond_percentage':'bond_percentage',
+    'property_percentage':'property_percentage',
+    'cash_percentage':'cash_percentage',
+    'risk_level':'risk_level',
+    'health_score':'health_score',
+    'health_status':'health_status',
+    'age':'age',
+    'height':'height_cm',
+    'weight':'weight_kg',
+    'blood_pressure':'blood_pressure',
+    'exercise_freq':'exercise_freq',
+    'sleep_hours':'sleep_hours',
+    'smoke':'smoke',
+    'drink':'drink',
+    'health_goals':'health_goals',
+    'bmi':'bmi',
+    'num_children':'num_children',
+    'children':'children',
+    'education_budget':'education_budget',
+    'education_plan':'education_plan',
+    'education_progress':'education_progress',
+    'education_goals':'education_goals',
+    'life_stage':'life_stage',
+    'short_term_goals':'short_term_goals',
+    'medium_term_goals':'medium_term_goals',
+    'long_term_goals':'long_term_goals',
+    'life_vision':'life_vision',
+    'priorities':'priorities',
+    'wealth_score':'wealth_score',
+    'family_score':'family_score',
+    'career_score':'career_score',
+    'growth_score':'growth_score',
+    'life_score':'life_score',
+    'name':'name',
+    'email_contact':'email_contact',
+    'phone':'phone',
+    'birth_date':'birth_date',
+    'gender':'gender',
+    'occupation':'occupation',
+    'city':'city',
+    'marital_status':'marital_status',
+    'daily_news':'daily_news',
+    'investment_alert':'investment_alert',
+    'health_reminder':'health_reminder',
+    'education_update':'education_update',
+    'allow_ai_analysis':'allow_ai_analysis',
+    'ux_opt_in':'ux_opt_in',
+    'ai_life_suggestion':'ai_life_suggestion',
+    'last_ai_life_date':'last_ai_life_date',
+    'ai_investment_suggestion':'ai_investment_suggestion',
+    'last_ai_investment_date':'last_ai_investment_date',
+    'ai_health_suggestion':'ai_health_suggestion',
+    'last_ai_health_date':'last_ai_health_date',
+    'ai_education_suggestion':'ai_education_suggestion',
+    'last_ai_education_date':'last_ai_education_date',
+    'weekly_tasks':'weekly_tasks',
+    'monthly_goals':'monthly_goals'
+}
+
+# inverse mapping (db column -> app key)
+DB_TO_APP: Dict[str, str] = {v: k for k, v in APP_TO_DB.items()}
+
+def _map_app_to_db(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Translate application keys to DB column names using APP_TO_DB."""
+    mapped = {}
+    for k, v in data.items():
+        dbk = APP_TO_DB.get(k, k)
+        mapped[dbk] = v
+    return mapped
+
+def _map_db_row_to_app(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Translate DB row keys to application keys using DB_TO_APP."""
+    mapped = {}
+    for k, v in row.items():
+        appk = DB_TO_APP.get(k, k)
+        mapped[appk] = v
+    return mapped
+
 # 页面配置
 st.set_page_config(
     page_title="智慧人生规划系统",
@@ -217,7 +326,7 @@ def register_user(username, email, password):
         return False
 
 # OpenAI API调用
-def get_ai_suggestion(context: str, data_type: str) -> str:
+def get_ai_suggestion(context: Any, data_type: str) -> str:
     """获取AI建议"""
     try:
         # Structured JSON prompt to force consistent, professional output
@@ -288,32 +397,52 @@ def get_ai_suggestion(context: str, data_type: str) -> str:
         return f"建议生成中遇到问题，请稍后再试。错误：{str(e)}"
 
 
-def get_cached_ai_suggestion(user_id: str, context: str, data_type: str) -> str:
-    """Return cached AI suggestion per user per day; update at most once per day."""
+def get_cached_ai_suggestion(user_id: str, context: Any, data_type: str) -> str:
+    """Return cached AI suggestion per user; update at most once per day unless force_refresh=True.
+
+    This now persists the suggestion in the `user_data` row under keys:
+      - ai_{data_type}_suggestion
+      - last_ai_{data_type}_date
+    """
     try:
+        # If no user_id provided, always fetch live
         if not user_id:
             return get_ai_suggestion(context, data_type)
 
         field_text = f"ai_{data_type}_suggestion"
         field_date = f"last_ai_{data_type}_date"
 
-        user_row = supabase.table('user_data').select('*').eq('user_id', user_id).execute()
-        existing = (user_row.data[0] if user_row.data else {})
+        # helper functions
+        def load_ai():
+            row = supabase.table('user_data').select(field_text, field_date).eq('user_id', user_id).execute()
+            if row.data and len(row.data) > 0:
+                return row.data[0].get(field_text), row.data[0].get(field_date)
+            return None, None
+
+        def save_ai(text, date_str):
+            update = {field_text: text, field_date: date_str, 'updated_at': datetime.now().isoformat()}
+            existing = supabase.table('user_data').select('user_id').eq('user_id', user_id).execute()
+            if existing.data:
+                supabase.table('user_data').update(update).eq('user_id', user_id).execute()
+            else:
+                update['user_id'] = user_id
+                update['created_at'] = datetime.now().isoformat()
+                supabase.table('user_data').insert(update).execute()
+
+        # Allow callers to force refresh by passing a special key in context (conservative change)
+        force_refresh = False
+        ctx_text = context if isinstance(context, str) else (context.get('text') if isinstance(context, dict) else '')
+        if isinstance(context, dict) and context.get('__force_refresh'):
+            force_refresh = True
 
         today = datetime.now().date().isoformat()
-        if existing.get(field_text) and existing.get(field_date) == today:
-            return str(existing.get(field_text) or "")
+        cached_text, cached_date = load_ai()
+        if not force_refresh and cached_text and cached_date == today:
+            return str(cached_text)
 
-        # generate new suggestion and save
-        suggestion = get_ai_suggestion(context, data_type)
-        update = {field_text: suggestion, field_date: today, 'updated_at': datetime.now().isoformat()}
-        if existing:
-            supabase.table('user_data').update(update).eq('user_id', user_id).execute()
-        else:
-            update['user_id'] = user_id
-            update['created_at'] = datetime.now().isoformat()
-            supabase.table('user_data').insert(update).execute()
-
+        # Call the AI and persist
+        suggestion = get_ai_suggestion(ctx_text, data_type)
+        save_ai(suggestion, today)
         return suggestion
     except Exception:
         return get_ai_suggestion(context, data_type)
@@ -335,7 +464,7 @@ def get_daily_updates():
         updates = {}
 
         # 获取金融新闻
-        finance_prompt = "今天是{}，请提供今日3条最重要的全球金融市场动态，每条不超过50字。".format(today)
+        finance_prompt = "请提供今日3条最重要的全球金融市场动态，每条不超过50字。"
         finance_response = openai_client.chat.completions.create(
             model="qwen-plus-2025-09-11",
             messages=[{"role": "user", "content": finance_prompt}],
@@ -400,19 +529,82 @@ def get_daily_updates():
 def save_user_data(user_id: str, data: Dict[str, Any]):
     """保存用户数据"""
     try:
+        # --- Pre-save normalization & validation ---
+        # Coerce numeric fields where applicable
+        if 'total_assets' in data:
+            try:
+                data['total_assets'] = float(data.get('total_assets') or 0.0)
+            except Exception:
+                data['total_assets'] = 0.0
+
+        # Normalize/validate asset percentages if any present
+        pct_keys = ['stock_percentage', 'bond_percentage', 'property_percentage', 'cash_percentage']
+        present_pcts = [k for k in pct_keys if k in data]
+        if present_pcts:
+            # Coerce to ints and ensure non-negative
+            pcts = []
+            for k in pct_keys:
+                v = data.get(k, None)
+                try:
+                    v_int = int(v) if v is not None else 0
+                except Exception:
+                    v_int = 0
+                if v_int < 0:
+                    v_int = 0
+                data[k] = v_int
+                pcts.append(v_int)
+
+            total_pct = sum(pcts)
+            if total_pct == 0:
+                # fallback to defaults if user submitted zeros
+                defaults = {'stock_percentage': 30, 'bond_percentage': 20, 'property_percentage': 35, 'cash_percentage': 15}
+                for k in pct_keys:
+                    data[k] = defaults[k]
+            elif total_pct != 100:
+                # normalize proportionally to sum to 100
+                normalized = [round((v / total_pct) * 100) for v in pcts]
+                # Adjust rounding drift by assigning remainder to the largest original share
+                drift = 100 - sum(normalized)
+                if drift != 0:
+                    max_idx = 0
+                    max_val = pcts[0]
+                    for i, val in enumerate(pcts):
+                        if val > max_val:
+                            max_val = val
+                            max_idx = i
+                    normalized[max_idx] += drift
+                for i, k in enumerate(pct_keys):
+                    data[k] = int(normalized[i])
+
+        # Ensure priorities list is a clean list
+        if 'priorities' in data:
+            pr = data.get('priorities')
+            if isinstance(pr, (list, tuple)):
+                data['priorities'] = [str(x) for x in pr]
+            else:
+                data['priorities'] = []
+
+        # Ensure boolean fields are boolean
+        for bool_k in ['smoke', 'daily_news', 'investment_alert', 'health_reminder', 'education_update']:
+            if bool_k in data:
+                data[bool_k] = bool(data[bool_k])
+
         # 检查是否已有数据
         existing = supabase.table('user_data').select("*").eq('user_id', user_id).execute()
         
-        data['user_id'] = user_id
-        data['updated_at'] = datetime.now().isoformat()
-        
+        # Map app keys to DB column names and filter by supported columns
+        mapped = _map_app_to_db(data)
+        filtered = {k: v for k, v in mapped.items() if k in SUPPORTED_USER_DATA_COLUMNS or k in ('user_id', 'created_at', 'updated_at')}
+        filtered['user_id'] = user_id
+        filtered['updated_at'] = datetime.now().isoformat()
+
         if existing.data:
             # 更新现有数据
-            result = supabase.table('user_data').update(data).eq('user_id', user_id).execute()
+            result = supabase.table('user_data').update(filtered).eq('user_id', user_id).execute()
         else:
             # 插入新数据
-            data['created_at'] = datetime.now().isoformat()
-            result = supabase.table('user_data').insert(data).execute()
+            filtered['created_at'] = datetime.now().isoformat()
+            result = supabase.table('user_data').insert(filtered).execute()
         
         return True
     except Exception as e:
@@ -424,10 +616,47 @@ def load_user_data(user_id: str) -> Dict[str, Any]:
     try:
         result = supabase.table('user_data').select("*").eq('user_id', user_id).execute()
         if result.data:
-            return result.data[0]
+            # map DB columns back to app keys
+            row = _map_db_row_to_app(result.data[0])
+            return sanitize_user_data(row)
         return {}
     except:
         return {}
+
+
+def sanitize_user_data(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize user_data dict, coercing None to safe defaults for keys used across pages."""
+    if not data:
+        return {}
+
+    normalized = dict(data)  # shallow copy
+
+    # Numeric defaults
+    normalized['total_assets'] = float(normalized.get('total_assets') or 0.0)
+    normalized['stock_percentage'] = int(normalized.get('stock_percentage') or 0)
+    normalized['bond_percentage'] = int(normalized.get('bond_percentage') or 0)
+    normalized['property_percentage'] = int(normalized.get('property_percentage') or 0)
+    normalized['cash_percentage'] = int(normalized.get('cash_percentage') or 0)
+    normalized['health_score'] = int(normalized.get('health_score') or 0)
+    normalized['education_progress'] = int(normalized.get('education_progress') or 0)
+    normalized['life_score'] = int(normalized.get('life_score') or 0)
+
+    # Simple string/list defaults
+    normalized['risk_level'] = normalized.get('risk_level') or '平衡'
+    normalized['exercise_freq'] = normalized.get('exercise_freq') or '每周3-4次'
+    normalized['drink'] = normalized.get('drink') or '偶尔'
+    normalized['health_goals'] = normalized.get('health_goals') or ''
+    normalized['education_plan'] = normalized.get('education_plan') or ''
+
+    # Children-related defaults: ensure num_children is int and child fields are present
+    normalized['num_children'] = int(normalized.get('num_children') or 0)
+    for i in range(normalized['num_children']):
+        normalized.setdefault(f'child_{i}_age', 10)
+        normalized.setdefault(f'child_{i}_grade', '小学')
+        normalized.setdefault(f'child_{i}_interests', '')
+        normalized.setdefault(f'child_{i}_goals', '')
+
+    return normalized
 
 def load_daily_updates() -> Dict[str, Any]:
     """加载今日更新"""
@@ -515,7 +744,12 @@ def dashboard_page():
         人生阶段：{user_data.get('life_stage', '事业发展期')}
         """
 
-        suggestion = get_cached_ai_suggestion(st.session_state.get('user_id', ''), context, 'life')
+        # allow manual refresh of suggestion to avoid calling API on every page load
+        user_id = st.session_state.get('user_id', '')
+        if st.button("刷新建议", key="refresh_life_suggestion"):
+            suggestion = get_cached_ai_suggestion(user_id, {'__force_refresh': True, 'text': context}, 'life')
+        else:
+            suggestion = get_cached_ai_suggestion(user_id, context, 'life')
         st.info(suggestion)
         
         # 可视化图表
@@ -565,29 +799,60 @@ def investment_page():
         
         # 资产配置表单
         with st.form("asset_form"):
-            total_assets = st.number_input("总资产（万元）", value=user_data.get('total_assets', 0), min_value=0)
-            
+            # Ensure total_assets is a float to avoid mixed-type errors
+            total_assets_default = float(user_data.get('total_assets', 0.0) or 0.0)
+            total_assets = st.number_input("总资产（万元）", value=total_assets_default, min_value=0.0, step=0.1, format="%.2f")
+
+            # keys for sliders so we can update via session_state
+            user_id = st.session_state.get('user_id', '')
+            stock_key = f"stock_pct_{user_id}"
+            bond_key = f"bond_pct_{user_id}"
+            property_key = f"property_pct_{user_id}"
+            cash_key = f"cash_pct_{user_id}"
+
+            # initialize session state defaults if missing
+            if stock_key not in st.session_state:
+                st.session_state[stock_key] = int(user_data.get('stock_percentage', 30) or 30)
+            if bond_key not in st.session_state:
+                st.session_state[bond_key] = int(user_data.get('bond_percentage', 20) or 20)
+            if property_key not in st.session_state:
+                st.session_state[property_key] = int(user_data.get('property_percentage', 35) or 35)
+            if cash_key not in st.session_state:
+                st.session_state[cash_key] = int(user_data.get('cash_percentage', 15) or 15)
+
             col_a, col_b = st.columns(2)
             with col_a:
-                stock_pct = st.slider("股票占比(%)", 0, 100, user_data.get('stock_percentage', 30))
-                bond_pct = st.slider("债券占比(%)", 0, 100, user_data.get('bond_percentage', 20))
-            
+                stock_pct = st.slider("股票占比(%)", 0, 100, value=st.session_state[stock_key], key=stock_key)
+                bond_pct = st.slider("债券占比(%)", 0, 100, value=st.session_state[bond_key], key=bond_key)
+
             with col_b:
-                property_pct = st.slider("房产占比(%)", 0, 100, user_data.get('property_percentage', 35))
-                cash_pct = st.slider("现金占比(%)", 0, 100, user_data.get('cash_percentage', 15))
-            
+                property_pct = st.slider("房产占比(%)", 0, 100, value=st.session_state[property_key], key=property_key)
+                cash_pct = st.slider("现金占比(%)", 0, 100, value=st.session_state[cash_key], key=cash_key)
+
+            # store risk preference in session_state so it can be used outside the form
+            risk_key = f"risk_level_{user_id}"
+            if risk_key not in st.session_state:
+                st.session_state[risk_key] = user_data.get('risk_level', '平衡')
+
             risk_level = st.select_slider(
                 "风险偏好",
                 options=['保守', '稳健', '平衡', '进取', '激进'],
-                value=user_data.get('risk_level', '平衡')
+                value=st.session_state[risk_key],
+                key=risk_key
             )
-            
+
             if st.form_submit_button("保存配置"):
+                # read values from session_state to ensure consistency
+                stock_pct = int(st.session_state.get(stock_key, stock_pct))
+                bond_pct = int(st.session_state.get(bond_key, bond_pct))
+                property_pct = int(st.session_state.get(property_key, property_pct))
+                cash_pct = int(st.session_state.get(cash_key, cash_pct))
+
                 if stock_pct + bond_pct + property_pct + cash_pct != 100:
                     st.error("资产配置比例总和必须等于100%")
                 else:
                     data = {
-                        'total_assets': total_assets,
+                        'total_assets': float(total_assets),
                         'stock_percentage': stock_pct,
                         'bond_percentage': bond_pct,
                         'property_percentage': property_pct,
@@ -598,6 +863,28 @@ def investment_page():
                         st.success("资产配置已更新")
                         st.rerun()
         
+        # end form
+
+        # place the Auto-allocate button outside the st.form to avoid Streamlit APIException
+        def _auto_allocate(stock_k, bond_k, prop_k, cash_k, risk_k):
+            alloc_map = {
+                '保守': {'stock': 20, 'bond': 50, 'property': 20, 'cash': 10},
+                '稳健': {'stock': 30, 'bond': 35, 'property': 25, 'cash': 10},
+                '平衡': {'stock': 40, 'bond': 30, 'property': 20, 'cash': 10},
+                '进取': {'stock': 55, 'bond': 20, 'property': 15, 'cash': 10},
+                '激进': {'stock': 70, 'bond': 10, 'property': 10, 'cash': 10}
+            }
+            a = alloc_map.get(st.session_state.get(risk_k, '平衡'), alloc_map['平衡'])
+            # set values in session_state inside callback (safe before re-render)
+            st.session_state[stock_k] = a['stock']
+            st.session_state[bond_k] = a['bond']
+            st.session_state[prop_k] = a['property']
+            st.session_state[cash_k] = a['cash']
+
+        st.button("智能分配", key="auto_alloc_button",
+                  on_click=_auto_allocate,
+                  args=(stock_key, bond_key, property_key, cash_key, risk_key))
+
         # 投资建议
         st.subheader("🎯 AI投资建议")
         context = f"""
@@ -607,7 +894,11 @@ def investment_page():
         今日金融新闻：{daily_updates.get('finance_news', '')}
         """
 
-        investment_suggestion = get_cached_ai_suggestion(st.session_state.get('user_id', ''), context, 'investment')
+        user_id = st.session_state.get('user_id', '')
+        if st.button("刷新建议", key="refresh_investment_suggestion"):
+            investment_suggestion = get_cached_ai_suggestion(user_id, {'__force_refresh': True, 'text': context}, 'investment')
+        else:
+            investment_suggestion = get_cached_ai_suggestion(user_id, context, 'investment')
         st.info(investment_suggestion)
         
         # 模拟收益图表
@@ -673,17 +964,20 @@ def health_page():
                 blood_pressure = st.text_input("血压", value=user_data.get('blood_pressure', '120/80'))
             
             with col_b:
+                exercise_options = ['从不', '偶尔(每月1-2次)', '每周1-2次', '每周3-4次', '每天']
+                val_ex = user_data.get('exercise_freq')
+                exercise_default = val_ex if isinstance(val_ex, str) and val_ex in exercise_options else '每周3-4次'
                 exercise_freq = st.selectbox(
                     "运动频率",
-                    ['从不', '偶尔(每月1-2次)', '每周1-2次', '每周3-4次', '每天'],
-                    index=['从不', '偶尔(每月1-2次)', '每周1-2次', '每周3-4次', '每天'].index(
-                        user_data.get('exercise_freq', '每周3-4次')
-                    )
+                    exercise_options,
+                    index=exercise_options.index(exercise_default)
                 )
                 sleep_hours = st.slider("平均睡眠时长(小时)", 4, 12, user_data.get('sleep_hours', 7))
                 smoke = st.selectbox("吸烟", ['否', '是'], index=0 if not user_data.get('smoke', False) else 1)
-                drink = st.selectbox("饮酒", ['不饮酒', '偶尔', '经常'], 
-                                    index=['不饮酒', '偶尔', '经常'].index(user_data.get('drink', '偶尔')))
+                drink_options = ['不饮酒', '偶尔', '经常']
+                val_dr = user_data.get('drink')
+                drink_default = val_dr if isinstance(val_dr, str) and val_dr in drink_options else '偶尔'
+                drink = st.selectbox("饮酒", drink_options, index=drink_options.index(drink_default))
             
             health_goals = st.text_area("健康目标", value=user_data.get('health_goals', ''), 
                                        placeholder="例如：减重10kg，改善睡眠质量等")
@@ -758,7 +1052,11 @@ def health_page():
         今日健康贴士：{daily_updates.get('health_tips', '')}
         """
 
-        health_suggestion = get_cached_ai_suggestion(st.session_state.get('user_id', ''), context, 'health')
+        user_id = st.session_state.get('user_id', '')
+        if st.button("刷新建议", key="refresh_health_suggestion"):
+            health_suggestion = get_cached_ai_suggestion(user_id, {'__force_refresh': True, 'text': context}, 'health')
+        else:
+            health_suggestion = get_cached_ai_suggestion(user_id, context, 'health')
         st.success(health_suggestion)
     
     with col2:
@@ -797,7 +1095,9 @@ def education_page():
         st.subheader("教育信息")
         
         with st.form("education_form"):
-            num_children = st.number_input("子女数量", value=user_data.get('num_children', 1), min_value=0, max_value=10)
+            # defensively handle None values stored in user_data
+            num_children_default = int(user_data.get('num_children') or 0)
+            num_children = st.number_input("子女数量", value=num_children_default, min_value=0, max_value=10)
             
             if num_children > 0:
                 children_info = []
@@ -805,19 +1105,15 @@ def education_page():
                     st.markdown(f"**孩子 {i+1}**")
                     col_a, col_b = st.columns(2)
                     with col_a:
-                        child_age = st.number_input(f"年龄", key=f"age_{i}", 
-                                                   value=user_data.get(f'child_{i}_age', 10), 
-                                                   min_value=0, max_value=30)
-                        child_grade = st.selectbox(f"年级", key=f"grade_{i}",
-                                                  options=['幼儿园', '小学', '初中', '高中', '大学', '其他'],
-                                                  index=['幼儿园', '小学', '初中', '高中', '大学', '其他'].index(
-                                                      user_data.get(f'child_{i}_grade', '小学')
-                                                  ))
+                        default_age = int(user_data.get(f'child_{i}_age') or 10)
+                        child_age = st.number_input(f"年龄", key=f"age_{i}", value=default_age, min_value=0, max_value=30)
+                        grade_options = ['幼儿园', '小学', '初中', '高中', '大学', '其他']
+                        val_gr = user_data.get(f'child_{i}_grade')
+                        default_grade = val_gr if isinstance(val_gr, str) and val_gr in grade_options else '小学'
+                        child_grade = st.selectbox(f"年级", key=f"grade_{i}", options=grade_options, index=grade_options.index(default_grade))
                     with col_b:
-                        child_interests = st.text_input(f"兴趣特长", key=f"interests_{i}",
-                                                      value=user_data.get(f'child_{i}_interests', ''))
-                        child_goals = st.text_input(f"教育目标", key=f"goals_{i}",
-                                                  value=user_data.get(f'child_{i}_goals', ''))
+                        child_interests = st.text_input(f"兴趣特长", key=f"interests_{i}", value=user_data.get(f'child_{i}_interests') or '')
+                        child_goals = st.text_input(f"教育目标", key=f"goals_{i}", value=user_data.get(f'child_{i}_goals') or '')
                     
                     children_info.append({
                         'age': child_age,
@@ -898,7 +1194,11 @@ def education_page():
         今日教育资讯：{daily_updates.get('education_info', '')}
         """
 
-        education_suggestion = get_cached_ai_suggestion(st.session_state.get('user_id', ''), context, 'education')
+        user_id = st.session_state.get('user_id', '')
+        if st.button("刷新建议", key="refresh_education_suggestion"):
+            education_suggestion = get_cached_ai_suggestion(user_id, {'__force_refresh': True, 'text': context}, 'education')
+        else:
+            education_suggestion = get_cached_ai_suggestion(user_id, context, 'education')
         st.info(education_suggestion)
     
     with col2:
@@ -934,12 +1234,15 @@ def life_planning_page():
         col1, col2 = st.columns(2)
         
         with col1:
+            stages = ['学习成长期', '事业发展期', '家庭稳定期', '财富积累期', '退休规划期']
+            # safe default if stored value is None or invalid
+            stored_stage = user_data.get('life_stage')
+            if not isinstance(stored_stage, str) or stored_stage not in stages:
+                stored_stage = '事业发展期'
             life_stage = st.selectbox(
                 "当前人生阶段",
-                ['学习成长期', '事业发展期', '家庭稳定期', '财富积累期', '退休规划期'],
-                index=['学习成长期', '事业发展期', '家庭稳定期', '财富积累期', '退休规划期'].index(
-                    user_data.get('life_stage', '事业发展期')
-                )
+                stages,
+                index=stages.index(stored_stage)
             )
             
             short_term_goals = st.text_area(
@@ -967,15 +1270,40 @@ def life_planning_page():
                 placeholder="描述您理想中的人生状态..."
             )
             
+            priorities_options = ['事业发展', '家庭和谐', '健康长寿', '财富积累', '个人成长', '社会贡献']
+            stored_priorities = user_data.get('priorities')
+            # ensure priorities is a list of valid options
+            if not isinstance(stored_priorities, (list, tuple)):
+                stored_priorities = ['家庭和谐', '健康长寿']
+            else:
+                stored_priorities = [p for p in stored_priorities if p in priorities_options]
+                if not stored_priorities:
+                    stored_priorities = ['家庭和谐', '健康长寿']
+
             priorities = st.multiselect(
                 "优先级排序",
-                ['事业发展', '家庭和谐', '健康长寿', '财富积累', '个人成长', '社会贡献'],
-                default=user_data.get('priorities', ['家庭和谐', '健康长寿'])
+                priorities_options,
+                default=stored_priorities
             )
         
         if st.form_submit_button("保存规划"):
-            life_score = calculate_life_score(user_data)
-            
+            # compute life_score with the latest form inputs; fall back to existing data when needed
+            merged = dict(user_data)
+            merged.update({
+                'life_stage': life_stage,
+                'short_term_goals': short_term_goals,
+                'medium_term_goals': medium_term_goals,
+                'long_term_goals': long_term_goals,
+                'life_vision': life_vision,
+                'priorities': priorities
+            })
+
+            try:
+                life_score = calculate_life_score(merged)
+            except Exception:
+                # fallback: use previous or default
+                life_score = int(merged.get('life_score') or 50)
+
             data = {
                 'life_stage': life_stage,
                 'short_term_goals': short_term_goals,
@@ -983,9 +1311,9 @@ def life_planning_page():
                 'long_term_goals': long_term_goals,
                 'life_vision': life_vision,
                 'priorities': priorities,
-                'life_score': life_score
+                'life_score': int(life_score)
             }
-            
+
             if save_user_data(st.session_state['user_id'], data):
                 st.success("人生规划已更新")
                 st.rerun()
@@ -1070,7 +1398,11 @@ def life_planning_page():
     教育进度：{user_data.get('education_progress', 75)}%
     """
     
-    life_suggestion = get_cached_ai_suggestion(st.session_state.get('user_id', ''), context, 'life')
+    user_id = st.session_state.get('user_id', '')
+    if st.button("刷新建议", key="refresh_lifeplanning_suggestion"):
+        life_suggestion = get_cached_ai_suggestion(user_id, {'__force_refresh': True, 'text': context}, 'life')
+    else:
+        life_suggestion = get_cached_ai_suggestion(user_id, context, 'life')
     st.success(life_suggestion)
     
     # 行动计划
@@ -1108,14 +1440,19 @@ def profile_page():
             birth_date = st.date_input("出生日期", value=datetime.now().date())
         
         with col2:
-            gender = st.selectbox("性别", ['男', '女', '其他'], 
-                                 index=['男', '女', '其他'].index(user_data.get('gender', '男')))
+            gender_options = ['男', '女', '其他']
+            stored_gender = user_data.get('gender')
+            if not isinstance(stored_gender, str) or stored_gender not in gender_options:
+                stored_gender = '男'
+            gender = st.selectbox("性别", gender_options, index=gender_options.index(stored_gender))
             occupation = st.text_input("职业", value=user_data.get('occupation', ''))
             city = st.text_input("所在城市", value=user_data.get('city', ''))
-            marital_status = st.selectbox("婚姻状况", ['未婚', '已婚', '离异', '丧偶'],
-                                         index=['未婚', '已婚', '离异', '丧偶'].index(
-                                             user_data.get('marital_status', '已婚')
-                                         ))
+            marital_options = ['未婚', '已婚', '离异', '丧偶']
+            stored_marital = user_data.get('marital_status')
+            if not isinstance(stored_marital, str) or stored_marital not in marital_options:
+                stored_marital = '已婚'
+            marital_status = st.selectbox("婚姻状况", marital_options,
+                                         index=marital_options.index(stored_marital))
         
         if st.form_submit_button("更新基本信息"):
             data = {
