@@ -489,7 +489,8 @@ def get_daily_updates():
         health_response = openai_client.chat.completions.create(
             model="qwen-plus-2025-09-11",
             messages=[{"role": "user", "content": health_prompt}],
-            max_tokens=150
+            max_tokens=200,
+            temperature = 1.9,
         )
         if getattr(health_response, 'choices', None):
             c = health_response.choices[0]
