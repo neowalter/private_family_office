@@ -471,7 +471,9 @@ def get_daily_updates():
             messages=[{"role": "system", "content": finance_system_prompt},
                 {"role": "user", "content": finance_prompt}],
             max_tokens=400,
-          enable_search=True
+                extra_body={"enable_search": True,
+                    "search_options": {"forced_search": True}
+                }
         )
         if getattr(finance_response, 'choices', None):
             c = finance_response.choices[0]
@@ -504,7 +506,9 @@ def get_daily_updates():
             model="qwen-plus-2025-09-11",
             messages=[{"role": "user", "content": edu_prompt}],
             max_tokens=250,
-            enable_search=True
+                extra_body={"enable_search": True,
+                    "search_options": {"forced_search": True}
+                }
         )
         if getattr(edu_response, 'choices', None):
             c = edu_response.choices[0]
