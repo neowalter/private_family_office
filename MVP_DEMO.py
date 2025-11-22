@@ -341,7 +341,7 @@ def get_ai_suggestion(context: Any, data_type: str) -> str:
         )
 
         response = openai_client.chat.completions.create(
-            model="qwen-plus-2025-09-11",
+            model="qwen3-max-2025-09-23",
             messages=[
                 {"role": "system", "content": base_system},
                 {"role": "user", "content": user_prompt}
@@ -467,7 +467,7 @@ def get_daily_updates():
         finance_system_prompt = "你是一个资深的财经，政治，金融新闻获情报分析专家，擅长梳理选择对金融市场影响较大的宏观重磅新闻事件，例如美联储加息，地缘政治冲突等。"
         finance_prompt = "今天是{today}，请调用搜索工具搜索今天的3个宏观的政治，金融新闻，请使用搜索进行获取，不要进行编造，每条不超过50字。".format(today=today)
         finance_response = openai_client.chat.completions.create(
-            model="qwen-plus-2025-09-11",
+            model="qwen3-max-2025-09-23",
             messages=[{"role": "system", "content": finance_system_prompt},
                 {"role": "user", "content": finance_prompt}],
             max_tokens=400,
@@ -487,7 +487,7 @@ def get_daily_updates():
         # 获取健康知识
         health_prompt = "请提供一条实用的健康小贴士，不超过100字。"
         health_response = openai_client.chat.completions.create(
-            model="qwen-plus-2025-09-11",
+            model="qwen3-max-2025-09-23",
             messages=[{"role": "user", "content": health_prompt}],
             max_tokens=200,
             temperature = 1.9,
@@ -504,7 +504,7 @@ def get_daily_updates():
         # 获取教育资讯
         edu_prompt = "今天是{today}，请提供一条关于教育相关的最新资讯或建议，不超过100字。".format(today=today)
         edu_response = openai_client.chat.completions.create(
-            model="qwen-plus-2025-09-11",
+            model="qwen3-max-2025-09-23",
             messages=[{"role": "user", "content": edu_prompt}],
             max_tokens=250,
                 extra_body={"enable_search": True,
